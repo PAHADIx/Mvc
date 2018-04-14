@@ -5,8 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Microsoft.AspNetCore.Mvc.Controllers;
-using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding
 {
@@ -56,7 +54,11 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// If this instance represents a parameter, the set of attributes for that parameter.
         /// Otherwise, <c>null</c>.
         /// </param>
-        public ModelAttributes(IEnumerable<object> typeAttributes, IEnumerable<object> propertyAttributes, IEnumerable<object> parameterAttributes)
+        // Reviewers: This constructor is new but not intended to be used. Should we make it internal (just for tests)?
+        public ModelAttributes(
+            IEnumerable<object> typeAttributes,
+            IEnumerable<object> propertyAttributes,
+            IEnumerable<object> parameterAttributes)
         {
             if (propertyAttributes != null)
             {
@@ -73,7 +75,14 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             else if (parameterAttributes != null)
             {
                 // Represents a parameter
-                Attributes = ParameterAttributes = parameterAttributes.ToArray();
+                if (typeAttributes == null)
+                {
+                    throw new ArgumentNullException(nameof(typeAttributes));
+                }
+
+                ParameterAttributes = parameterAttributes.ToArray();
+                TypeAttributes = typeAttributes.ToArray();
+                Attributes = ParameterAttributes.Concat(TypeAttributes).ToArray();
             }
             else if (typeAttributes != null)
             {
@@ -146,7 +155,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 }
             }
 
-            return new ModelAttributes(typeAttributes, propertyAttributes, null);
+            return new ModelAttributes(typeAttributes, propertyAttributes, parameterAttributes: null);
         }
 
         /// <summary>
@@ -170,7 +179,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 attributes = attributes.Concat(metadataType.GetTypeInfo().GetCustomAttributes());
             }
 
-            return new ModelAttributes(attributes, null, null);
+            return new ModelAttributes(attributes, propertyAttributes: null, parameterAttributes: null);
         }
 
         /// <summary>
@@ -178,10 +187,18 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
         /// </summary>
         /// <param name="parameterInfo">The <see cref="ParameterInfo"/> for which attributes need to be resolved.
         /// </param>
-        /// <returns>A <see cref="ModelAttributes"/> instance with the attributes of the <see cref="ParameterInfo"/>.</returns>
+        /// <returns>
+        /// A <see cref="ModelAttributes"/> instance with the attributes of the <see cref="ParameterInfo"/>.
+        /// </returns>
         public static ModelAttributes GetAttributesForParameter(ParameterInfo parameterInfo)
         {
-            return new ModelAttributes(null, null, parameterInfo.GetCustomAttributes());
+            // Prior versions called IModelMetadataProvider.GetMetadataForType(...) and therefore
+            // GetAttributesForType(...) for parameters. Maintain that set of attributes (including those from an
+            // ModelMetadataTypeAttribute reference) for back-compatibility.
+            var typeAttribues = GetAttributesForType(parameterInfo.ParameterType).TypeAttributes;
+            var parameterAttributes = parameterInfo.GetCustomAttributes();
+
+            return new ModelAttributes(typeAttribues, propertyAttributes: null, parameterAttributes);
         }
 
         private static Type GetMetadataType(Type type)
